@@ -132,6 +132,48 @@ export interface IpsativePillarScore {
   weeklyMinutes: number;
 }
 
+export type AssignmentCategory =
+  | 'HOMEWORK'
+  | 'PROJECT_MILESTONE'
+  | 'PRACTICE_DRILL'
+  | 'DAILY_ROUTINE';
+
+export type TrackerMetricUnit =
+  | 'MINUTES'
+  | 'PAGES'
+  | 'PROBLEMS'
+  | 'SESSIONS'
+  | 'STEPS'
+  | 'CHECKINS';
+
+export interface GoogleSSOSession {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarEmoji?: string;
+  role: 'PARENT' | 'CHILD';
+  linkedChildId?: string;
+  provider: 'google-oauth2';
+  authenticatedAt: string;
+}
+
+export interface CustomTracker {
+  id: string;
+  childId: string;
+  title: string;
+  description: string;
+  pillar: LifePillar;
+  unit: TrackerMetricUnit;
+  targetValue: number;
+  currentValue: number;
+  incrementStep: number;
+  streakCount: number;
+  dueDateLabel: string;
+  assignedByParentName: string;
+  lastLoggedAt?: string;
+  createdAt: string;
+}
+
 export interface ScheduledTask {
   id: string;
   childId: string;
@@ -151,6 +193,10 @@ export interface ScheduledTask {
   proposedByChild?: boolean;
   parentApproved?: boolean;
   completedAt?: string;
+  isAssignment?: boolean;
+  assignmentCategory?: AssignmentCategory;
+  dueDateLabel?: string;
+  assignedByParentName?: string;
 }
 
 export interface ChildProfile {
@@ -161,6 +207,7 @@ export interface ChildProfile {
   age: number;
   gradeLabel: string;
   releaseLevel: ReleaseLevel;
+  googleEmail?: string;
   pinCode?: string;
   pinRequired: boolean;
   avatarGradient: string;
@@ -205,12 +252,15 @@ export interface FamilyStoreState {
   familyId: string;
   familyName: string;
   principalParentName: string;
+  principalParentEmail?: string;
   coParentName: string;
   activeProfileId: string;
   activeTheme?: ThemeId;
   sidebarCollapsed?: boolean;
+  authSession?: GoogleSSOSession | null;
   children: ChildProfile[];
   tasks: ScheduledTask[];
+  trackers?: CustomTracker[];
   estimations: TimeEstimationRecord[];
   reflections: MetacognitiveReflection[];
   kudos: ParentKudos[];
@@ -219,3 +269,4 @@ export interface FamilyStoreState {
   summitCommitments: SundaySummitCommitment[];
   integrationLogs: ExternalIntegrationLog[];
 }
+

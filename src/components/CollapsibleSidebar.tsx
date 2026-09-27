@@ -13,12 +13,14 @@ import {
   Filter,
   HeartHandshake,
   Layers,
+  Lock,
   MessageSquareHeart,
   Palette,
   Scale,
   ShieldCheck,
   Sparkles,
   Sun,
+  Target,
   Timer,
   X,
 } from 'lucide-react';
@@ -31,6 +33,8 @@ export function CollapsibleSidebar() {
     state,
     activeChild,
     isParentView,
+    isKidIsolatedSession,
+    visibleChildren,
     setActiveProfile,
     activeTheme,
     setActiveTheme,
@@ -45,6 +49,12 @@ export function CollapsibleSidebar() {
   const targetChildId = activeChild?.id || state.children[0]?.id || 'child-1';
 
   const childNavItems = [
+    {
+      id: 'trackers',
+      label: 'Trackers & Assignments',
+      targetDomId: `section-child-trackers-${targetChildId}`,
+      icon: Target,
+    },
     {
       id: 'timeline',
       label: 'Energy Timeline',
@@ -78,6 +88,12 @@ export function CollapsibleSidebar() {
   ];
 
   const parentNavItems = [
+    {
+      id: 'roster',
+      label: 'Kids, Trackers & Assignments',
+      targetDomId: 'section-parent-kid-tracker-manager',
+      icon: Target,
+    },
     {
       id: 'summit',
       label: 'Sunday Family Summit',
@@ -276,19 +292,20 @@ export function CollapsibleSidebar() {
               </div>
             </section>
 
-            {/* 2. Workspace Switcher */}
+            {/* 2. Workspace Switcher (Isolated when Kid SSO Active) */}
             <nav
               id="nav-sidebar-workspaces"
               aria-label="Sidebar Workspace Switcher"
               className="pt-2 border-t border-slate-800/80 space-y-1.5"
             >
               {!isSidebarCollapsed && (
-                <div className="px-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Family Workspaces
+                <div className="px-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span>{isKidIsolatedSession ? 'Private Kid Workspace' : 'Family Workspaces'}</span>
+                  {isKidIsolatedSession && <Lock className="w-3 h-3 text-indigo-400" />}
                 </div>
               )}
-              {state.children.map((child) => {
-                const isSelected = state.activeProfileId === child.id;
+              {visibleChildren.map((child) => {
+                const isSelected = !isParentView && activeChild?.id === child.id;
                 return (
                   <button
                     key={child.id}
@@ -317,22 +334,24 @@ export function CollapsibleSidebar() {
                 );
               })}
 
-              <button
-                id="btn-sidebar-profile-parent"
-                type="button"
-                onClick={() => setActiveProfile('PARENT_COMMAND_CENTER')}
-                title="Parent Command Center"
-                className={`w-full min-h-[40px] rounded-xl px-2.5 py-1.5 text-xs font-extrabold flex items-center gap-2 border transition-all cursor-pointer ${
-                  isParentView
-                    ? 'bg-gradient-to-r from-amber-400/25 to-teal-400/25 text-white border-teal-400 shadow-sm'
-                    : 'bg-slate-900/70 text-teal-300 border-slate-800/80 hover:border-teal-500/40'
-                } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
-              >
-                <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
-                {!isSidebarCollapsed && (
-                  <span className="truncate">Parent Command Hub</span>
-                )}
-              </button>
+              {!isKidIsolatedSession && (
+                <button
+                  id="btn-sidebar-profile-parent"
+                  type="button"
+                  onClick={() => setActiveProfile('PARENT_COMMAND_CENTER')}
+                  title="Parent Command Center"
+                  className={`w-full min-h-[40px] rounded-xl px-2.5 py-1.5 text-xs font-extrabold flex items-center gap-2 border transition-all cursor-pointer ${
+                    isParentView
+                      ? 'bg-gradient-to-r from-amber-400/25 to-teal-400/25 text-white border-teal-400 shadow-sm'
+                      : 'bg-slate-900/70 text-teal-300 border-slate-800/80 hover:border-teal-500/40'
+                  } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
+                  {!isSidebarCollapsed && (
+                    <span className="truncate">Parent Command Hub</span>
+                  )}
+                </button>
+              )}
             </nav>
 
             {/* 3. Quick Section Jump Links */}

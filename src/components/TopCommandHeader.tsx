@@ -8,20 +8,30 @@ import {
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
+  PlusCircle,
   RotateCcw,
   ShieldCheck,
   Sparkles,
   Unlock,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { useFamilyStore } from '@/context/FamilyStoreContext';
 import { MOOD_META, THEME_CATALOG } from '@/lib/seedData';
 import { ThemeId } from '@/types/domain';
+import { GoogleMarkSvg, GoogleSSOAuthModal } from '@/components/GoogleSSOAuthModal';
+import { AddKidAndTrackerModal } from '@/components/AddKidAndTrackerModal';
 
 export function TopCommandHeader() {
   const {
     state,
+    activeChild,
     isParentView,
+    authSession,
+    isKidIsolatedSession,
+    visibleChildren,
+    setGoogleSSOModalOpen,
+    openStudioModal,
     setActiveProfile,
     toggleChildPinRequirement,
     resetDemoData,
@@ -37,6 +47,11 @@ export function TopCommandHeader() {
   const [pinError, setPinError] = useState(false);
 
   const handleProfileClick = (profileId: string) => {
+    // Enforce strict kid isolation: a logged-in kid cannot switch to Parent Hub or siblings
+    if (isKidIsolatedSession && authSession?.linkedChildId) {
+      setActiveProfile(authSession.linkedChildId);
+      return;
+    }
     if (profileId === 'PARENT_COMMAND_CENTER') {
       setActiveProfile(profileId);
       return;
@@ -142,13 +157,26 @@ export function TopCommandHeader() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 xl:hidden">
+            <div className="flex items-center gap-1.5 xl:hidden">
+              <button
+                id="btn-google-sso-mobile"
+                type="button"
+                onClick={() => setGoogleSSOModalOpen(true)}
+                className="min-h-[40px] px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-200 bg-slate-900 border border-slate-800 flex items-center gap-1.5 cursor-pointer"
+              >
+                <GoogleMarkSvg id="svg-google-sso-mobile" />
+                <span>
+                  {isKidIsolatedSession
+                    ? `${activeChild?.name || 'Kid'} SSO`
+                    : 'Google SSO'}
+                </span>
+              </button>
               <button
                 id="btn-reset-demo-mobile"
                 type="button"
                 onClick={resetDemoData}
                 title="Reset pre-seeded family data"
-                className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[40px] px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 flex items-center gap-1 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Reset</span>
@@ -162,8 +190,8 @@ export function TopCommandHeader() {
             aria-label="Family Profile Switcher"
             className="hidden md:flex flex-wrap xl:flex-nowrap items-center gap-2 shrink-0"
           >
-            {state.children.map((child) => {
-              const isSelected = state.activeProfileId === child.id;
+            {visibleChildren.map((child) => {
+              const isSelected = !isParentView && activeChild?.id === child.id;
               const moodInfo = MOOD_META[child.currentMood];
               return (
                 <div
@@ -210,7 +238,7 @@ export function TopCommandHeader() {
                     </div>
                   </button>
 
-                  {child.age >= 8 && (
+                  {!isKidIsolatedSession && child.age >= 8 && (
                     <button
                       id={`btn-pin-toggle-${child.id}`}
                       type="button"
@@ -238,29 +266,89 @@ export function TopCommandHeader() {
               );
             })}
 
-            <button
-              id="tab-profile-switch-parent"
-              type="button"
-              role="tab"
-              aria-selected={isParentView}
-              data-testid="profile-switch-parent"
-              onClick={() => handleProfileClick('PARENT_COMMAND_CENTER')}
-              className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer border ${
-                isParentView
-                  ? 'bg-gradient-to-r from-amber-400 via-teal-400 to-emerald-400 text-slate-950 border-teal-300 shadow-md'
-                  : 'bg-slate-900 text-teal-300 border-teal-500/40 hover:bg-slate-800/90'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 shrink-0" />
-              <span>Parent Hub</span>
-              {unpaintedScriptsCount > 0 && (
-                <span
-                  id="badge-parent-scripts-count"
-                  className="px-1.5 py-0.5 text-[10px] rounded-full bg-slate-950 text-amber-300 font-mono"
+            {/* When logged in as a Kid via Google SSO, show strict privacy isolation indicator instead of sibling/Parent tabs */}
+            {isKidIsolatedSession ? (
+              <div
+                id="badge-kid-privacy-lock"
+                className="min-h-[42px] px-3 py-1.5 rounded-xl bg-indigo-950/40 border border-indigo-500/40 text-indigo-200 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Lock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>Only {activeChild?.name}&apos;s Details Visible</span>
+              </div>
+            ) : (
+              <>
+                <button
+                  id="tab-profile-switch-parent"
+                  type="button"
+                  role="tab"
+                  aria-selected={isParentView}
+                  data-testid="profile-switch-parent"
+                  onClick={() => handleProfileClick('PARENT_COMMAND_CENTER')}
+                  className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                    isParentView
+                      ? 'bg-gradient-to-r from-amber-400 via-teal-400 to-emerald-400 text-slate-950 border-teal-300 shadow-md'
+                      : 'bg-slate-900 text-teal-300 border-teal-500/40 hover:bg-slate-800/90'
+                  }`}
                 >
-                  {unpaintedScriptsCount} Scripts
-                </span>
-              )}
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>Parent Hub</span>
+                  {unpaintedScriptsCount > 0 && (
+                    <span
+                      id="badge-parent-scripts-count"
+                      className="px-1.5 py-0.5 text-[10px] rounded-full bg-slate-950 text-amber-300 font-mono"
+                    >
+                      {unpaintedScriptsCount} Scripts
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  id="btn-header-add-kid"
+                  type="button"
+                  onClick={() => openStudioModal('ADD_KID', activeChild?.id)}
+                  title="Add a new child profile with Google SSO & starter trackers"
+                  className="min-h-[42px] px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-700 hover:border-teal-400 text-xs font-bold text-teal-300 flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ Add Kid</span>
+                </button>
+              </>
+            )}
+
+            <button
+              id="btn-header-assign-tracker"
+              type="button"
+              onClick={() => openStudioModal('CREATE_TRACKER', activeChild?.id)}
+              title="Create a custom tracker or homework assignment"
+              className="min-h-[42px] px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-700 hover:border-teal-400 text-xs font-bold text-slate-200 flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <PlusCircle className="w-3.5 h-3.5 text-teal-400" />
+              <span>+ Tracker / Assign</span>
+            </button>
+
+            {/* Google SSO Account Switcher Button */}
+            <button
+              id="btn-header-google-sso"
+              type="button"
+              onClick={() => setGoogleSSOModalOpen(true)}
+              title="Switch Google SSO Account (Parent Admin vs Isolated Kid Login)"
+              className="min-h-[42px] px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-teal-400 text-xs font-bold text-white flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              <GoogleMarkSvg id="svg-header-google-sso" />
+              <div className="text-left leading-tight">
+                <div className="text-[11px] font-black flex items-center gap-1">
+                  <span>
+                    {authSession
+                      ? authSession.role === 'CHILD'
+                        ? `${activeChild?.name} (Kid SSO)`
+                        : 'Parent SSO'
+                      : 'Sign in'}
+                  </span>
+                </div>
+                <div className="text-[9.5px] text-slate-400 font-mono max-w-[125px] truncate">
+                  {authSession?.email || 'Google OAuth'}
+                </div>
+              </div>
             </button>
 
             {/* Quick Theme Dropdown Pill */}
@@ -289,10 +377,10 @@ export function TopCommandHeader() {
               type="button"
               onClick={resetDemoData}
               title="Reset pre-seeded demo data"
-              className="hidden xl:flex min-h-[42px] px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 bg-slate-900/70 border border-slate-800 hover:text-slate-200 hover:border-slate-700 items-center gap-1.5 cursor-pointer shrink-0"
+              className="hidden 2xl:flex min-h-[42px] px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-400 bg-slate-900/70 border border-slate-800 hover:text-slate-200 hover:border-slate-700 items-center gap-1 cursor-pointer shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Seed</span>
+              <span>Reset</span>
             </button>
           </nav>
         </div>
@@ -304,8 +392,8 @@ export function TopCommandHeader() {
         aria-label="Mobile Bottom Quick Switcher"
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-3 pt-2 bottom-nav-safe grid grid-cols-4 gap-1.5"
       >
-        {state.children.map((child) => {
-          const isSelected = state.activeProfileId === child.id;
+        {visibleChildren.map((child) => {
+          const isSelected = !isParentView && activeChild?.id === child.id;
           return (
             <button
               key={child.id}
@@ -325,18 +413,29 @@ export function TopCommandHeader() {
             </button>
           );
         })}
+        {!isKidIsolatedSession && (
+          <button
+            id="btn-mobile-dock-parent"
+            type="button"
+            onClick={() => handleProfileClick('PARENT_COMMAND_CENTER')}
+            className={`min-h-[46px] rounded-xl px-1.5 py-1.5 text-xs font-extrabold flex flex-col items-center justify-center border transition-all cursor-pointer ${
+              isParentView
+                ? 'bg-gradient-to-r from-amber-400 to-teal-400 text-slate-950 border-teal-300'
+                : 'bg-slate-900/80 text-teal-300 border-teal-500/40'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span className="text-[10px] mt-0.5 truncate">Parent Hub</span>
+          </button>
+        )}
         <button
-          id="btn-mobile-dock-parent"
+          id="btn-mobile-dock-sso"
           type="button"
-          onClick={() => handleProfileClick('PARENT_COMMAND_CENTER')}
-          className={`min-h-[46px] rounded-xl px-1.5 py-1.5 text-xs font-extrabold flex flex-col items-center justify-center border transition-all cursor-pointer ${
-            isParentView
-              ? 'bg-gradient-to-r from-amber-400 to-teal-400 text-slate-950 border-teal-300'
-              : 'bg-slate-900/80 text-teal-300 border-teal-500/40'
-          }`}
+          onClick={() => setGoogleSSOModalOpen(true)}
+          className="min-h-[46px] rounded-xl px-1.5 py-1.5 text-xs font-bold flex flex-col items-center justify-center border bg-slate-900/80 text-slate-300 border-slate-800 cursor-pointer"
         >
-          <ShieldCheck className="w-4 h-4" />
-          <span className="text-[10px] mt-0.5 truncate">Parent Hub</span>
+          <GoogleMarkSvg id="svg-mobile-dock-google" />
+          <span className="text-[10px] mt-0.5 truncate">Google SSO</span>
         </button>
         <button
           id="btn-mobile-dock-themes"
@@ -422,6 +521,13 @@ export function TopCommandHeader() {
           </div>
         </div>
       )}
+
+      {/* Global Google SSO Authentication & RBAC Modal */}
+      <GoogleSSOAuthModal />
+
+      {/* Global Add Kid, Custom Tracker & Assignment Studio Modal */}
+      <AddKidAndTrackerModal />
     </>
   );
 }
+

@@ -2,10 +2,13 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
+  AssignmentCategory,
   ChildProfile,
+  CustomTracker,
   EnergyLoad,
   ExternalIntegrationLog,
   FamilyStoreState,
+  GoogleSSOSession,
   KudosBadgeType,
   LifePillar,
   MediaArtifact,
@@ -14,6 +17,7 @@ import {
   ScheduledTask,
   SocraticCoachingSuggestion,
   ThemeId,
+  TrackerMetricUnit,
 } from '@/types/domain';
 import { INITIAL_FAMILY_STORE } from '@/lib/seedData';
 import { supabaseMockClient } from '@/lib/supabaseMock';
@@ -42,7 +46,7 @@ interface CompleteTaskPayload {
   artifactCategory?: MediaArtifact['category'];
 }
 
-interface ProposeTaskPayload {
+export interface ProposeTaskPayload {
   childId: string;
   title: string;
   subtitle: string;
@@ -50,13 +54,61 @@ interface ProposeTaskPayload {
   energyLoad: EnergyLoad;
   scheduledStartTime: string;
   defaultDurationMinutes: number;
+  isAssignment?: boolean;
+  assignmentCategory?: AssignmentCategory;
+  dueDateLabel?: string;
+  assignedByParentName?: string;
 }
+
+export interface AddChildPayload {
+  name: string;
+  age: number;
+  gradeLabel: string;
+  googleEmail: string;
+  releaseLevel: ReleaseLevel;
+  avatarEmoji: string;
+  personalBestHeadline?: string;
+}
+
+export interface CreateTrackerPayload {
+  childId: string;
+  title: string;
+  description: string;
+  pillar: LifePillar;
+  unit: TrackerMetricUnit;
+  targetValue: number;
+  incrementStep: number;
+  dueDateLabel: string;
+}
+
+export type StudioModalTab = 'ADD_KID' | 'CREATE_TRACKER' | 'CREATE_ASSIGNMENT' | null;
 
 interface FamilyStoreContextValue {
   state: FamilyStoreState;
   isHydrated: boolean;
   activeChild: ChildProfile | undefined;
   isParentView: boolean;
+  authSession: GoogleSSOSession | null;
+  isKidIsolatedSession: boolean;
+  visibleChildren: ChildProfile[];
+  isGoogleSSOModalOpen: boolean;
+  setGoogleSSOModalOpen: (open: boolean) => void;
+  studioModalTab: StudioModalTab;
+  studioPreselectedChildId: string | undefined;
+  openStudioModal: (tab: Exclude<StudioModalTab, null>, preselectedChildId?: string) => void;
+  closeStudioModal: () => void;
+  signInWithGoogleSSO: (input: {
+    email: string;
+    displayName: string;
+    role: 'PARENT' | 'CHILD';
+    linkedChildId?: string;
+    avatarEmoji?: string;
+  }) => void;
+  signOutGoogleSSO: () => void;
+  addChildProfile: (payload: AddChildPayload) => string;
+  createCustomTracker: (payload: CreateTrackerPayload) => void;
+  logTrackerProgress: (trackerId: string, delta?: number) => void;
+  getChildTrackers: (childId: string) => CustomTracker[];
   activeTheme: ThemeId;
   isSidebarCollapsed: boolean;
   isMobileSidebarOpen: boolean;
@@ -99,13 +151,34 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
   const [isHydrated, setIsHydrated] = useState(false);
   const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activePillarFilter, setActivePillarFilter] = useState<LifePillar | 'ALL'>('ALL');
+  const [isGoogleSSOModalOpen, setGoogleSSOModalOpen] = useState(false);
+  const [studioModalTab, setStudioModalTab] = useState<StudioModalTab>(null);
+  const [studioPreselectedChildId, setStudioPreselectedChildId] = useState<string | undefined>(
+    undefined
+  );
 
   useEffect(() => {
     let mounted = true;
     supabaseMockClient.loadState().then((loaded) => {
       if (mounted) {
+        const mergedAuth =
+          loaded.authSession !== undefined
+            ? loaded.authSession
+            : INITIAL_FAMILY_STORE.authSession;
+        const mergedTrackers =
+          loaded.trackers && loaded.trackers.length > 0
+            ? loaded.trackers
+            : INITIAL_FAMILY_STORE.trackers || [];
+        const enforcedProfileId =
+          mergedAuth?.role === 'CHILD' && mergedAuth.linkedChildId
+            ? mergedAuth.linkedChildId
+            : loaded.activeProfileId;
+
         setState({
           ...loaded,
+          authSession: mergedAuth,
+          trackers: mergedTrackers,
+          activeProfileId: enforcedProfileId,
           activeTheme: loaded.activeTheme || 'OBSIDIAN_TEAL',
           sidebarCollapsed: Boolean(loaded.sidebarCollapsed),
         });
@@ -134,6 +207,18 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
+  const openStudioModal = useCallback(
+    (tab: Exclude<StudioModalTab, null>, preselectedChildId?: string) => {
+      setStudioPreselectedChildId(preselectedChildId);
+      setStudioModalTab(tab);
+    },
+    []
+  );
+
+  const closeStudioModal = useCallback(() => {
+    setStudioModalTab(null);
+  }, []);
+
   const setActiveTheme = useCallback(
     (theme: ThemeId) => {
       updateAndPersist((prev) => ({
@@ -153,10 +238,19 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
 
   const setActiveProfile = useCallback(
     (profileId: string) => {
-      updateAndPersist((prev) => ({
-        ...prev,
-        activeProfileId: profileId,
-      }));
+      updateAndPersist((prev) => {
+        // Strict Kid Privacy Enforcement: A logged-in kid can ONLY view their own profile
+        if (prev.authSession?.role === 'CHILD' && prev.authSession.linkedChildId) {
+          return {
+            ...prev,
+            activeProfileId: prev.authSession.linkedChildId,
+          };
+        }
+        return {
+          ...prev,
+          activeProfileId: profileId,
+        };
+      });
     },
     [updateAndPersist]
   );
@@ -450,6 +544,346 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
     [updateAndPersist]
   );
 
+  const signInWithGoogleSSO = useCallback(
+    (input: {
+      email: string;
+      displayName: string;
+      role: 'PARENT' | 'CHILD';
+      linkedChildId?: string;
+      avatarEmoji?: string;
+    }) => {
+      updateAndPersist((prev) => {
+        const normalizedEmail = input.email.trim().toLowerCase();
+        // Auto-match child by Google email if not explicitly linked
+        const matchedChild =
+          input.linkedChildId
+            ? prev.children.find((c) => c.id === input.linkedChildId)
+            : prev.children.find(
+                (c) => (c.googleEmail || '').toLowerCase() === normalizedEmail
+              );
+
+        const resolvedRole: 'PARENT' | 'CHILD' =
+          matchedChild && input.role === 'CHILD'
+            ? 'CHILD'
+            : matchedChild && !input.linkedChildId
+            ? 'CHILD'
+            : input.role;
+
+        const targetChildId =
+          resolvedRole === 'CHILD'
+            ? matchedChild?.id || prev.children[0]?.id
+            : undefined;
+
+        const newSession: GoogleSSOSession = {
+          id: `sso-${Date.now()}`,
+          email: normalizedEmail,
+          displayName:
+            resolvedRole === 'CHILD' && matchedChild
+              ? `${matchedChild.name} (${matchedChild.gradeLabel})`
+              : input.displayName,
+          avatarEmoji:
+            resolvedRole === 'CHILD' && matchedChild
+              ? matchedChild.avatarEmoji
+              : input.avatarEmoji || '🛡️',
+          role: resolvedRole,
+          linkedChildId: targetChildId,
+          provider: 'google-oauth2',
+          authenticatedAt: new Date().toISOString(),
+        };
+
+        return {
+          ...prev,
+          authSession: newSession,
+          activeProfileId:
+            resolvedRole === 'CHILD' && targetChildId
+              ? targetChildId
+              : prev.activeProfileId,
+        };
+      });
+      setGoogleSSOModalOpen(false);
+    },
+    [updateAndPersist]
+  );
+
+  const signOutGoogleSSO = useCallback(() => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      authSession: null,
+    }));
+    setGoogleSSOModalOpen(true);
+  }, [updateAndPersist]);
+
+  const addChildProfile = useCallback(
+    (payload: AddChildPayload): string => {
+      const newChildId = `child-${Date.now()}`;
+      playRunwayChime('KUDOS_SENT');
+      updateAndPersist((prev) => {
+        const releaseShort =
+          payload.releaseLevel === 'LEVEL_1_GUIDED'
+            ? 'Guided'
+            : payload.releaseLevel === 'LEVEL_2_COPILOT'
+            ? 'Co-Pilot'
+            : 'Architect';
+
+        const newChild: ChildProfile = {
+          id: newChildId,
+          familyId: prev.familyId,
+          name: payload.name.trim(),
+          nickname: `${payload.name.trim()} (${payload.gradeLabel} • ${releaseShort})`,
+          age: payload.age,
+          gradeLabel: payload.gradeLabel,
+          releaseLevel: payload.releaseLevel,
+          googleEmail:
+            payload.googleEmail.trim().toLowerCase() ||
+            `${payload.name.trim().toLowerCase().replace(/\s+/g, '.')}@gmail.com`,
+          pinCode: '1234',
+          pinRequired: false,
+          avatarGradient: 'from-indigo-400 via-teal-500 to-emerald-500',
+          avatarEmoji: payload.avatarEmoji || '🌟',
+          currentMood: 'FOCUSED',
+          streakDays: 1,
+          graceShieldsRemaining: 2,
+          maxGraceShieldsPerMonth: 2,
+          graceDayActiveToday: false,
+          kudosCount30Days: 1,
+          coachingCheckIns30Days: 1,
+          personalBestHeadline:
+            payload.personalBestHeadline?.trim() ||
+            `Onboarded to Nuvoriq with custom 5-Pillar Trackers & Google SSO account!`,
+          resilienceBadges: [
+            {
+              id: `res-init-${Date.now()}`,
+              title: 'Nuvoriq Pioneer Badge',
+              description: `Joined ${prev.familyName} with personalized 5-Pillar Executive Trackers.`,
+              iconName: 'Sparkles',
+              unlockedAt: new Date().toISOString().slice(0, 10),
+              isBounceBack: false,
+            },
+          ],
+          ipsativeBaseline: [
+            {
+              pillar: 'ACADEMIC_MASTERY',
+              label: 'Academic Mastery',
+              previous30DayScore: 70,
+              currentScore: 78,
+              targetBalancedScore: 85,
+              weeklyMinutes: 120,
+            },
+            {
+              pillar: 'DISCIPLINES_ARTS',
+              label: 'Disciplines & Arts',
+              previous30DayScore: 68,
+              currentScore: 76,
+              targetBalancedScore: 80,
+              weeklyMinutes: 90,
+            },
+            {
+              pillar: 'UNSTRUCTURED_PLAY',
+              label: 'Unstructured Play',
+              previous30DayScore: 72,
+              currentScore: 80,
+              targetBalancedScore: 85,
+              weeklyMinutes: 180,
+            },
+            {
+              pillar: 'RESTORATION_FAMILY',
+              label: 'Restoration & Family',
+              previous30DayScore: 74,
+              currentScore: 82,
+              targetBalancedScore: 85,
+              weeklyMinutes: 210,
+            },
+            {
+              pillar: 'EXECUTIVE_HABITS',
+              label: 'Executive Habits',
+              previous30DayScore: 65,
+              currentScore: 75,
+              targetBalancedScore: 80,
+              weeklyMinutes: 60,
+            },
+          ],
+        };
+
+        const starterTasks: ScheduledTask[] = [
+          {
+            id: `task-init-1-${Date.now()}`,
+            childId: newChildId,
+            title: `${newChild.name}'s Core Math & Problem Solving Assignment`,
+            subtitle: 'Assigned Academic Focus Sprint • Estimate time before starting',
+            pillar: 'ACADEMIC_MASTERY',
+            energyLoad: 'HIGH_COGNITIVE',
+            scheduledStartTime: '15:30',
+            defaultDurationMinutes: 25,
+            status: 'SCHEDULED',
+            socraticHints: [
+              'What diagram or smaller example can help unlock this problem?',
+              'Which step stretched your brain the most today?',
+            ],
+            runwayWarning10MinText: `10-Min Runway: Grab water & notebook — ${newChild.name}'s Math Sprint starts in 10 minutes.`,
+            runwayWarning3MinText: `3-Min Runway: Clear desk and lock in your Time Estimate!`,
+            orderIndex: 1,
+            parentApproved: true,
+            isAssignment: true,
+            assignmentCategory: 'HOMEWORK',
+            dueDateLabel: 'Due Today • 5:00 PM',
+            assignedByParentName: prev.principalParentName,
+          },
+          {
+            id: `task-init-2-${Date.now()}`,
+            childId: newChildId,
+            title: `${newChild.name}'s Creative Movement & Outdoor Recharge`,
+            subtitle: 'Restorative Play & Physical Balance Block',
+            pillar: 'UNSTRUCTURED_PLAY',
+            energyLoad: 'RESTORATIVE',
+            scheduledStartTime: '16:10',
+            defaultDurationMinutes: 30,
+            status: 'SCHEDULED',
+            socraticHints: ['What was the most fun thing you built or explored during break?'],
+            runwayWarning10MinText: '10-Min Runway: Wrap up current block for outdoor recharge!',
+            runwayWarning3MinText: '3-Min Runway: Shoes on for outdoor play!',
+            orderIndex: 2,
+            parentApproved: true,
+            isAssignment: false,
+          },
+        ];
+
+        const starterTrackers: CustomTracker[] = [
+          {
+            id: `trk-init-1-${Date.now()}`,
+            childId: newChildId,
+            title: `${newChild.name}'s Weekly Academic Problem Tracker`,
+            description: 'Complete 10 focused practice problems with self-checked work.',
+            pillar: 'ACADEMIC_MASTERY',
+            unit: 'PROBLEMS',
+            targetValue: 10,
+            currentValue: 2,
+            incrementStep: 1,
+            streakCount: 1,
+            dueDateLabel: 'Weekly Target • Sun 6:00 PM',
+            assignedByParentName: prev.principalParentName,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: `trk-init-2-${Date.now()}`,
+            childId: newChildId,
+            title: `${newChild.name}'s Daily Reading & Discovery Log`,
+            description: 'Read 60 pages of independent chapter or science books this week.',
+            pillar: 'RESTORATION_FAMILY',
+            unit: 'PAGES',
+            targetValue: 60,
+            currentValue: 15,
+            incrementStep: 5,
+            streakCount: 1,
+            dueDateLabel: 'Weekly Reading Tracker',
+            assignedByParentName: prev.principalParentName,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+
+        const starterSummit = {
+          id: `sum-init-${Date.now()}`,
+          childId: newChildId,
+          childName: `${newChild.name} (${newChild.gradeLabel})`,
+          celebrationWin: `Successfully launched ${newChild.name}'s personalized 5-Pillar Executive Hub!`,
+          roadblockIdentified: 'Calibrating afternoon transition timing between school and homework.',
+          socraticDiscussionPrompt: `"Which afternoon block feels most energizing for you right now, ${newChild.name}?"`,
+          nextWeekAdjustment: 'Add a 15-minute snack & movement buffer before starting afternoon assignments.',
+          parentSupportPledge: 'Celebrate time-estimation accuracy and effort strategies over speed.',
+          completedInSummit: false,
+        };
+
+        return {
+          ...prev,
+          activeProfileId: newChildId,
+          children: [...prev.children, newChild],
+          tasks: [...prev.tasks, ...starterTasks],
+          trackers: [...(prev.trackers || []), ...starterTrackers],
+          summitCommitments: [...prev.summitCommitments, starterSummit],
+        };
+      });
+      return newChildId;
+    },
+    [updateAndPersist]
+  );
+
+  const createCustomTracker = useCallback(
+    (payload: CreateTrackerPayload) => {
+      playRunwayChime('KUDOS_SENT');
+      updateAndPersist((prev) => {
+        const newTracker: CustomTracker = {
+          id: `trk-${Date.now()}`,
+          childId: payload.childId,
+          title: payload.title.trim(),
+          description: payload.description.trim() || 'Custom Habit & Mastery Tracker',
+          pillar: payload.pillar,
+          unit: payload.unit,
+          targetValue: Math.max(1, payload.targetValue),
+          currentValue: 0,
+          incrementStep: Math.max(1, payload.incrementStep),
+          streakCount: 1,
+          dueDateLabel: payload.dueDateLabel.trim() || 'Weekly Goal',
+          assignedByParentName: prev.principalParentName,
+          createdAt: new Date().toISOString(),
+        };
+        return {
+          ...prev,
+          trackers: [newTracker, ...(prev.trackers || [])],
+        };
+      });
+    },
+    [updateAndPersist]
+  );
+
+  const logTrackerProgress = useCallback(
+    (trackerId: string, delta?: number) => {
+      playRunwayChime('TASK_COMPLETE');
+      updateAndPersist((prev) => {
+        const target = (prev.trackers || []).find((t) => t.id === trackerId);
+        if (!target) return prev;
+        const step = delta ?? target.incrementStep;
+        const nextVal = Math.min(target.targetValue, target.currentValue + step);
+
+        return {
+          ...prev,
+          trackers: (prev.trackers || []).map((t) =>
+            t.id === trackerId
+              ? {
+                  ...t,
+                  currentValue: nextVal,
+                  streakCount: t.streakCount + 1,
+                  lastLoggedAt: new Date().toISOString(),
+                }
+              : t
+          ),
+          children: prev.children.map((c) =>
+            c.id === target.childId
+              ? {
+                  ...c,
+                  ipsativeBaseline: c.ipsativeBaseline.map((score) =>
+                    score.pillar === target.pillar
+                      ? {
+                          ...score,
+                          currentScore: Math.min(100, score.currentScore + 1),
+                          weeklyMinutes: score.weeklyMinutes + 10,
+                        }
+                      : score
+                  ),
+                }
+              : c
+          ),
+        };
+      });
+    },
+    [updateAndPersist]
+  );
+
+  const getChildTrackers = useCallback(
+    (childId: string): CustomTracker[] => {
+      return (state.trackers || []).filter((t) => t.childId === childId);
+    },
+    [state.trackers]
+  );
+
   const proposeOrCreateTask = useCallback(
     (payload: ProposeTaskPayload, isParent: boolean) => {
       updateAndPersist((prev) => {
@@ -477,6 +911,11 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
           orderIndex: childTasks.length + 1,
           proposedByChild: !isParent,
           parentApproved: !requiresApproval,
+          isAssignment: payload.isAssignment ?? isParent,
+          assignmentCategory: payload.assignmentCategory || (isParent ? 'HOMEWORK' : undefined),
+          dueDateLabel: payload.dueDateLabel || (isParent ? 'Assigned Today' : undefined),
+          assignedByParentName:
+            payload.assignedByParentName || (isParent ? prev.principalParentName : undefined),
         };
 
         return {
@@ -686,8 +1125,23 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
     setState(fresh);
   }, []);
 
-  const activeChild = state.children.find((c) => c.id === state.activeProfileId);
-  const isParentView = state.activeProfileId === 'PARENT_COMMAND_CENTER';
+  const authSession = state.authSession ?? null;
+  const isKidIsolatedSession =
+    authSession?.role === 'CHILD' && Boolean(authSession?.linkedChildId);
+
+  const visibleChildren = isKidIsolatedSession
+    ? state.children.filter((c) => c.id === authSession?.linkedChildId)
+    : state.children;
+
+  const effectiveProfileId =
+    isKidIsolatedSession && authSession?.linkedChildId
+      ? authSession.linkedChildId
+      : state.activeProfileId;
+
+  const activeChild =
+    state.children.find((c) => c.id === effectiveProfileId) || state.children[0];
+  const isParentView =
+    !isKidIsolatedSession && effectiveProfileId === 'PARENT_COMMAND_CENTER';
 
   return (
     <FamilyStoreContext.Provider
@@ -696,6 +1150,21 @@ export function FamilyStoreProvider({ children }: { children: React.ReactNode })
         isHydrated,
         activeChild,
         isParentView,
+        authSession,
+        isKidIsolatedSession,
+        visibleChildren,
+        isGoogleSSOModalOpen,
+        setGoogleSSOModalOpen,
+        studioModalTab,
+        studioPreselectedChildId,
+        openStudioModal,
+        closeStudioModal,
+        signInWithGoogleSSO,
+        signOutGoogleSSO,
+        addChildProfile,
+        createCustomTracker,
+        logTrackerProgress,
+        getChildTrackers,
         activeTheme,
         isSidebarCollapsed,
         isMobileSidebarOpen,

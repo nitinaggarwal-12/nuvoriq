@@ -297,6 +297,94 @@ async function runVerification() {
       screenshots: [solarShot, auroraCollapsedShot, oceanicLeoShot, oceanicParentShot],
     };
 
+    // STEP 4C: Test Add Kid + Tracker + Assignment Studio Modal & Google SSO Kid Privacy Isolation
+    const addKidHeaderBtn = await page.$('#btn-header-add-kid');
+    await addKidHeaderBtn.click();
+    await new Promise((r) => setTimeout(r, 350));
+
+    results.uniqueIdAudits.studio_modal_add_kid = await auditDomUniqueIds(
+      page,
+      'Studio Modal (Add Kid Tab)'
+    );
+    const addKidShot = path.join(outputDir, '11_add_kid_studio_modal.png');
+    await page.screenshot({ path: addKidShot, fullPage: false });
+
+    const tabCreateTracker = await page.$('#tab-studio-create-tracker');
+    await tabCreateTracker.click();
+    await new Promise((r) => setTimeout(r, 250));
+    results.uniqueIdAudits.studio_modal_create_tracker = await auditDomUniqueIds(
+      page,
+      'Studio Modal (Create Tracker Tab)'
+    );
+
+    const tabCreateAssignment = await page.$('#tab-studio-create-assignment');
+    await tabCreateAssignment.click();
+    await new Promise((r) => setTimeout(r, 250));
+    results.uniqueIdAudits.studio_modal_create_assignment = await auditDomUniqueIds(
+      page,
+      'Studio Modal (Create Assignment Tab)'
+    );
+
+    const closeStudioBtn = await page.$('#btn-close-kid-tracker-studio');
+    await closeStudioBtn.click();
+    await new Promise((r) => setTimeout(r, 250));
+
+    // Open Google SSO Modal & Sign in as Kid (Leo) to verify Kid Privacy Isolation
+    const ssoHeaderBtn = await page.$('#btn-header-google-sso');
+    await ssoHeaderBtn.click();
+    await new Promise((r) => setTimeout(r, 350));
+
+    results.uniqueIdAudits.google_sso_modal = await auditDomUniqueIds(
+      page,
+      'Google SSO Account Switcher Modal'
+    );
+    const ssoModalShot = path.join(outputDir, '12_google_sso_modal.png');
+    await page.screenshot({ path: ssoModalShot, fullPage: false });
+
+    const leoSsoBtn = await page.$('#btn-google-sso-kid-child-1');
+    await leoSsoBtn.click();
+    await new Promise((r) => setTimeout(r, 400));
+
+    results.uniqueIdAudits.kid_isolated_sso_view = await auditDomUniqueIds(
+      page,
+      'Kid Isolated SSO Session (Leo Only)'
+    );
+
+    const privacyLockBadge = await page.$('#badge-kid-privacy-lock');
+    const leoTabInIsolatedMode = await page.$('#tab-profile-switch-child-1');
+    const mayaTabInIsolatedMode = await page.$('#tab-profile-switch-child-2');
+    const parentTabInIsolatedMode = await page.$('#tab-profile-switch-parent');
+
+    const kidIsolatedShot = path.join(outputDir, '13_kid_sso_isolated_workspace.png');
+    await page.screenshot({ path: kidIsolatedShot, fullPage: false });
+
+    // Log +1 progress on Leo's custom tracker (trk-leo-aops)
+    const logTrackerBtn = await page.$('#btn-log-tracker-progress-trk-leo-aops');
+    if (logTrackerBtn) {
+      await logTrackerBtn.click();
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    // Switch back to Parent Admin via 1-tap toggle or SSO modal
+    const exitIsolationBtn = await page.$('#btn-toggle-kid-sso-isolation-child-1');
+    if (exitIsolationBtn) {
+      await exitIsolationBtn.click();
+      await new Promise((r) => setTimeout(r, 350));
+    }
+
+    results.steps.step4c_google_sso_and_kid_isolation = {
+      passed:
+        Boolean(privacyLockBadge) &&
+        Boolean(leoTabInIsolatedMode) &&
+        mayaTabInIsolatedMode === null &&
+        parentTabInIsolatedMode === null,
+      privacyLockBadgeVisible: Boolean(privacyLockBadge),
+      leoTabVisible: Boolean(leoTabInIsolatedMode),
+      siblingMayaTabHidden: mayaTabInIsolatedMode === null,
+      parentHubTabHidden: parentTabInIsolatedMode === null,
+      screenshots: [addKidShot, ssoModalShot, kidIsolatedShot],
+    };
+
     // STEP 5: iOS (iPhone 15 Pro - 393x852) & Android (Pixel 8 Pro - 412x915) Emulation Audit
     const mobileDevices = [
       {

@@ -68,6 +68,9 @@ const KUDOS_BADGE_OPTIONS: {
 export function ParentCommandCenter() {
   const {
     state,
+    openStudioModal,
+    signInWithGoogleSSO,
+    getChildTrackers,
     getCognitiveClashes,
     autoBalanceCognitiveSchedule,
     approveProposedTask,
@@ -308,6 +311,150 @@ export function ParentCommandCenter() {
             </button>
           </div>
         )}
+      </section>
+
+      {/* Family Kid Roster, Google SSO Accounts, Custom Trackers & Assignment Dispatcher */}
+      <section
+        id="section-parent-kid-tracker-manager"
+        aria-label="Family Kid Roster, Google SSO Accounts & Assignment Manager"
+        className="rounded-2xl bg-slate-900/75 border border-slate-800/90 p-5 shadow-xl space-y-4"
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-teal-400" />
+              <h2
+                id="heading-parent-kid-tracker-manager"
+                className="text-base font-black text-white"
+              >
+                Family Kid Roster, Google SSO Accounts &amp; Tracker/Assignment Studio ({state.children.length} Kids)
+              </h2>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Add new kids with their own Google SSO email, create custom skill trackers, and assign homework tasks. When a kid logs in with their Google SSO email, they strictly see only their own details.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              id="btn-parent-hub-add-kid"
+              type="button"
+              onClick={() => openStudioModal('ADD_KID')}
+              className="min-h-[42px] px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <span>+ Add New Kid Profile</span>
+            </button>
+            <button
+              id="btn-parent-hub-create-tracker"
+              type="button"
+              onClick={() => openStudioModal('CREATE_TRACKER')}
+              className="min-h-[42px] px-3.5 py-2 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/40 hover:bg-teal-500/30 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>+ Create Tracker</span>
+            </button>
+            <button
+              id="btn-parent-hub-create-assignment"
+              type="button"
+              onClick={() => openStudioModal('CREATE_ASSIGNMENT')}
+              className="min-h-[42px] px-3.5 py-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>+ Assign Homework / Task</span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          id="grid-parent-kid-roster"
+          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+        >
+          {state.children.map((child) => {
+            const trackers = getChildTrackers(child.id);
+            const childTasks = state.tasks.filter((t) => t.childId === child.id);
+            const email =
+              child.googleEmail ||
+              `${child.name.toLowerCase().replace(/\s+/g, '.')}@gmail.com`;
+
+            return (
+              <article
+                key={child.id}
+                id={`card-parent-roster-kid-${child.id}`}
+                className="rounded-2xl bg-slate-950 border border-slate-800 p-4 flex flex-col justify-between space-y-3"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl">{child.avatarEmoji}</span>
+                      <div>
+                        <h3
+                          id={`heading-roster-kid-${child.id}`}
+                          className="text-sm font-black text-white"
+                        >
+                          {child.name} ({child.gradeLabel} • Age {child.age})
+                        </h3>
+                        <p className="text-[11px] text-teal-300 font-mono">
+                          Google SSO: {email}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
+                      {trackers.length} Trackers • {childTasks.length} Tasks
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 pt-1">
+                    {trackers.slice(0, 2).map((trk) => (
+                      <div
+                        key={trk.id}
+                        id={`item-roster-tracker-preview-${trk.id}`}
+                        className="text-[11px] text-slate-300 flex items-center justify-between bg-slate-900/70 px-2.5 py-1.5 rounded-lg border border-slate-800/80"
+                      >
+                        <span className="truncate font-semibold">{trk.title}</span>
+                        <span className="font-mono text-teal-300 shrink-0 ml-2">
+                          {trk.currentValue}/{trk.targetValue} {trk.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-800/80">
+                  <button
+                    id={`btn-roster-add-tracker-${child.id}`}
+                    type="button"
+                    onClick={() => openStudioModal('CREATE_TRACKER', child.id)}
+                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-slate-900 hover:border-teal-400 border border-slate-800 text-[11px] font-bold text-teal-300 cursor-pointer"
+                  >
+                    + Tracker
+                  </button>
+                  <button
+                    id={`btn-roster-assign-task-${child.id}`}
+                    type="button"
+                    onClick={() => openStudioModal('CREATE_ASSIGNMENT', child.id)}
+                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-slate-900 hover:border-indigo-400 border border-slate-800 text-[11px] font-bold text-indigo-300 cursor-pointer"
+                  >
+                    + Assign
+                  </button>
+                  <button
+                    id={`btn-roster-login-kid-sso-${child.id}`}
+                    type="button"
+                    onClick={() =>
+                      signInWithGoogleSSO({
+                        email,
+                        displayName: `${child.name} (${child.gradeLabel})`,
+                        role: 'CHILD',
+                        linkedChildId: child.id,
+                        avatarEmoji: child.avatarEmoji,
+                      })
+                    }
+                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-[11px] font-extrabold text-indigo-200 cursor-pointer"
+                  >
+                    🔑 Kid SSO
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
       {/* Household Cognitive Load & Co-Pilot Approval Banner */}

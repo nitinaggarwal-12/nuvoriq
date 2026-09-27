@@ -59,6 +59,12 @@ export function ChildExecutiveWorkspace() {
   const {
     state,
     activeChild,
+    authSession,
+    isKidIsolatedSession,
+    signInWithGoogleSSO,
+    openStudioModal,
+    getChildTrackers,
+    logTrackerProgress,
     setChildMood,
     setChildReleaseLevel,
     getChildTasks,
@@ -87,6 +93,7 @@ export function ChildExecutiveWorkspace() {
   if (!activeChild) return null;
 
   const allChildTasks = getChildTasks(activeChild.id);
+  const childTrackers = getChildTrackers(activeChild.id);
   const tasks =
     activePillarFilter === 'ALL'
       ? allChildTasks
@@ -141,9 +148,13 @@ export function ChildExecutiveWorkspace() {
     setShowProposeForm(false);
   };
 
+  const childGoogleEmail =
+    activeChild.googleEmail ||
+    `${activeChild.name.toLowerCase().replace(/\s+/g, '.')}@gmail.com`;
+
   return (
     <div id={`view-child-workspace-${activeChild.id}`} className="space-y-6">
-      {/* 1. Child Hero Status Bar: Mood Dial + Gradual Release Engine + Streak Shield Summary */}
+      {/* 1. Child Hero Status Bar: Mood Dial + Gradual Release Engine + Google SSO Privacy Isolation */}
       <section
         id={`section-child-hero-${activeChild.id}`}
         aria-label={`${activeChild.name}'s Executive Status`}
@@ -178,6 +189,12 @@ export function ChildExecutiveWorkspace() {
                 >
                   {RELEASE_LEVEL_META[activeChild.releaseLevel].title}
                 </span>
+                <span
+                  id={`badge-child-google-email-${activeChild.id}`}
+                  className="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-teal-500/15 text-teal-300 border border-teal-500/30"
+                >
+                  Google SSO: {childGoogleEmail}
+                </span>
               </div>
               <p
                 id={`text-personal-best-${activeChild.id}`}
@@ -189,30 +206,67 @@ export function ChildExecutiveWorkspace() {
             </div>
           </div>
 
-          {/* Gradual Release Level Selector (Scales K-3 -> 4-7 -> 8-12) */}
-          <div
-            id={`group-autonomy-selector-${activeChild.id}`}
-            className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800"
-          >
-            <span className="text-[11px] font-bold text-slate-400 px-1.5">
-              Autonomy Stage:
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(RELEASE_LEVEL_META) as ReleaseLevel[]).map((lvl) => (
-                <button
-                  key={lvl}
-                  id={`btn-release-level-${activeChild.id}-${lvl}`}
-                  type="button"
-                  onClick={() => setChildReleaseLevel(activeChild.id, lvl)}
-                  className={`min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                    activeChild.releaseLevel === lvl
-                      ? 'bg-teal-500/25 text-teal-200 border-teal-400'
-                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
-                  }`}
-                >
-                  {RELEASE_LEVEL_META[lvl].badge}
-                </button>
-              ))}
+          {/* Gradual Release Level Selector + 1-Tap Kid Google SSO Isolation Toggle */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              id={`btn-toggle-kid-sso-isolation-${activeChild.id}`}
+              type="button"
+              onClick={() => {
+                if (isKidIsolatedSession) {
+                  signInWithGoogleSSO({
+                    email: state.principalParentEmail || 'nitin.aggarwal@gmail.com',
+                    displayName: `${state.principalParentName} (Parent Admin)`,
+                    role: 'PARENT',
+                    avatarEmoji: '🛡️',
+                  });
+                } else {
+                  signInWithGoogleSSO({
+                    email: childGoogleEmail,
+                    displayName: `${activeChild.name} (${activeChild.gradeLabel})`,
+                    role: 'CHILD',
+                    linkedChildId: activeChild.id,
+                    avatarEmoji: activeChild.avatarEmoji,
+                  });
+                }
+              }}
+              className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer flex items-center gap-2 ${
+                isKidIsolatedSession
+                  ? 'bg-indigo-500/25 text-indigo-200 border-indigo-400 shadow-sm'
+                  : 'bg-slate-950/90 text-teal-300 border-teal-500/40 hover:border-teal-400'
+              }`}
+            >
+              <span>{isKidIsolatedSession ? '🔒' : '🔑'}</span>
+              <span>
+                {isKidIsolatedSession
+                  ? `Kid-Only SSO Active (${activeChild.name} Only) • Switch to Parent`
+                  : `Test ${activeChild.name}'s Isolated Google SSO Login`}
+              </span>
+            </button>
+
+            <div
+              id={`group-autonomy-selector-${activeChild.id}`}
+              className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-slate-950/80 p-2 rounded-xl border border-slate-800"
+            >
+              <span className="text-[11px] font-bold text-slate-400 px-1.5">
+                Autonomy Stage:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {(Object.keys(RELEASE_LEVEL_META) as ReleaseLevel[]).map((lvl) => (
+                  <button
+                    key={lvl}
+                    id={`btn-release-level-${activeChild.id}-${lvl}`}
+                    type="button"
+                    onClick={() => setChildReleaseLevel(activeChild.id, lvl)}
+                    className={`min-h-[40px] px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                      activeChild.releaseLevel === lvl
+                        ? 'bg-teal-500/25 text-teal-200 border-teal-400'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {RELEASE_LEVEL_META[lvl].badge}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -254,6 +308,148 @@ export function ChildExecutiveWorkspace() {
               );
             })}
           </div>
+        </div>
+      </section>
+
+      {/* 1B. Assigned Custom Trackers & Skill Goals (Isolated strictly to this logged-in child) */}
+      <section
+        id={`section-child-trackers-${activeChild.id}`}
+        aria-label={`${activeChild.name}'s Assigned Trackers & Goals`}
+        className="rounded-2xl bg-slate-900/70 border border-slate-800/90 p-5 shadow-xl space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Sparkles className="w-4 h-4 text-teal-400" />
+              <h2
+                id={`heading-child-trackers-${activeChild.id}`}
+                className="text-base font-black text-white"
+              >
+                {activeChild.name}&apos;s Assigned Trackers &amp; Skill Goals ({childTrackers.length})
+              </h2>
+              <span
+                id={`badge-tracker-privacy-${activeChild.id}`}
+                className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/40"
+              >
+                Scoped to {childGoogleEmail}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Track weekly mastery milestones across all 5 Life Pillars. Logging progress boosts{' '}
+              {activeChild.name}&apos;s personal Ipsative Radar without sibling comparison.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              id={`btn-workspace-create-tracker-${activeChild.id}`}
+              type="button"
+              onClick={() => openStudioModal('CREATE_TRACKER', activeChild.id)}
+              className="min-h-[40px] px-3 py-1.5 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/40 hover:bg-teal-500/30 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ Create Tracker</span>
+            </button>
+
+            <button
+              id={`btn-workspace-assign-task-${activeChild.id}`}
+              type="button"
+              onClick={() => openStudioModal('CREATE_ASSIGNMENT', activeChild.id)}
+              className="min-h-[40px] px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ Assign Homework / Task</span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          id={`grid-child-trackers-${activeChild.id}`}
+          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5"
+        >
+          {childTrackers.map((trk) => {
+            const pillarMeta = PILLAR_META[trk.pillar];
+            const pct = Math.min(
+              100,
+              Math.round((trk.currentValue / Math.max(1, trk.targetValue)) * 100)
+            );
+            const isDone = trk.currentValue >= trk.targetValue;
+
+            return (
+              <article
+                key={trk.id}
+                id={`card-custom-tracker-${trk.id}`}
+                className="rounded-2xl bg-slate-950/90 border border-slate-800 p-4 flex flex-col justify-between space-y-3"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${pillarMeta.badgeClass}`}
+                    >
+                      {pillarMeta.shortLabel}
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-amber-300">
+                      🔥 {trk.streakCount}d streak • {trk.dueDateLabel}
+                    </span>
+                  </div>
+
+                  <h3
+                    id={`heading-tracker-${trk.id}`}
+                    className="text-sm font-black text-white"
+                  >
+                    {trk.title}
+                  </h3>
+                  <p className="text-xs text-slate-300">{trk.description}</p>
+                  <p className="text-[10px] text-slate-400">
+                    Assigned by <strong className="text-slate-200">{trk.assignedByParentName}</strong>
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-mono font-extrabold text-teal-300">
+                      {trk.currentValue} / {trk.targetValue} {trk.unit}
+                    </span>
+                    <span className="font-mono font-bold text-slate-300">{pct}%</span>
+                  </div>
+
+                  <div className="w-full h-2.5 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+                    <div
+                      id={`bar-tracker-progress-${trk.id}`}
+                      className="h-full rounded-full bg-gradient-to-r from-teal-400 to-emerald-400 transition-all duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+
+                  <button
+                    id={`btn-log-tracker-progress-${trk.id}`}
+                    type="button"
+                    disabled={isDone}
+                    onClick={() => logTrackerProgress(trk.id)}
+                    className={`w-full min-h-[40px] px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      isDone
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-gradient-to-r from-teal-400 to-emerald-400 text-slate-950 hover:brightness-110 shadow-sm'
+                    }`}
+                  >
+                    {isDone ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Goal Reached! ({trk.targetValue} {trk.unit})</span>
+                      </>
+                    ) : (
+                      <>
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        <span>
+                          Log +{trk.incrementStep} {trk.unit} Progress
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 

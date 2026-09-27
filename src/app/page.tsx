@@ -173,7 +173,7 @@ export default function HomePage() {
                 <strong className="text-slate-200">Nuvoriq Family Executive Platform</strong> • Grades K–12 Gradual Release Architecture (Level 1 Guided → Level 2 Co-Pilot → Level 3 Executive)
               </div>
               <div id="footer-pillars-summary" className="font-mono text-[11px] text-teal-400">
-                5 Life Pillars • 6 Multi-Mode Themes • Socratic Parent Coaching
+                Google SSO Kid Privacy Isolation • 5 Life Pillars • 6 Multi-Mode Themes
               </div>
             </div>
           </footer>
